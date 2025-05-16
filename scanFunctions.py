@@ -1,7 +1,8 @@
 import cv2 as cv
 import numpy as np
+import time
 
-def nothing():
+def nothing(pos):
     """
     空函数，用于OpenCV滑动条的回调函数。
     当滑动条的值发生变化时，调用此函数，但不执行任何操作。
@@ -281,7 +282,7 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
             return (int(original_point[0][0][0]), int(original_point[0][0][1]))
         
         except Exception as e:
-            print(f"坐标转换错误: {e}")
+            # print(f"坐标转换错误: {e}")
             return (0, 0)
     # 计算每个选项的宽度   
     sectionWidth = int(img.shape[1]/choice)
@@ -306,3 +307,17 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
                 if debug:
                     cv.circle(img_original, originalcenter(cx, cy, matrix), 10, (255, 255, 255), cv.FILLED)
     return img, img_original
+
+def calculate_fps(prev_time):
+    """
+    计算并返回当前帧率(FPS)和新的时间戳
+    
+    :param prev_time: 上一帧的时间戳
+    :return: (fps, current_time) 当前帧率和新的时间戳
+    """
+    current_time = time.time()
+    fps = 1 / (current_time - prev_time)
+    return fps, current_time
+
+def real_position(x, y):
+    pass

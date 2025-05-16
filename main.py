@@ -4,6 +4,7 @@ import cv2 as cv
 import numpy as np
 # 导入自定义的扫描功能模块
 import scanFunctions as sf
+import time
 
 ################################
 # 定义图像文件的路径
@@ -31,12 +32,12 @@ window_info = [
         # 滑动条信息，每个滑动条是一个元组，包含名称、初始值和最大值
         "trackbars": [("thres_min1", 0, 255), ("thres_max1", 255, 255)]
     },
-    {
-        # 窗口名称
-        "window_name": "threshold2",
-        # 滑动条信息，每个滑动条是一个元组，包含名称、初始值和最大值
-        "trackbars": [("thres_min2", 0, 255), ("thres_max2", 255, 255)]
-    }
+    # {
+    #     # 窗口名称
+    #     "window_name": "threshold2",
+    #     # 滑动条信息，每个滑动条是一个元组，包含名称、初始值和最大值
+    #     "trackbars": [("thres_min2", 0, 255), ("thres_max2", 255, 255)]
+    # }
 ]
 
 # 定义窗口信息结果列表，用于获取滑动条的值
@@ -47,12 +48,12 @@ window_info_result = [
         # 滑动条名称列表
         "trackbars": ["thres_min1", "thres_max1"]
     },
-    {
-        # 窗口名称
-        "window_name": "threshold2",
-        # 滑动条名称列表
-        "trackbars": ["thres_min2", "thres_max2"]
-    }
+    # {
+    #     # 窗口名称
+    #     "window_name": "threshold2",
+    #     # 滑动条名称列表
+    #     "trackbars": ["thres_min2", "thres_max2"]
+    # }
 ]
 
 # 定义问题数量
@@ -63,21 +64,37 @@ COLUMNS_BROAD = 3
 # 定义检测区域的宽度和高度
 DETECT_WIDTH = 30
 DETECT_HEIGHT = 30
+# 定义稳定时间
+STABLE_TIME = 1
 
 # 定义答案像素值的阈值
 ans_limit = 4000
+# 定义变化检测的阈值
+CHANGE_THRESHOLD = 1
 # 定义正确答案列表
 ans = [1,1,1]
 # 定义答案像素值的阈值
 ans_limit = 4000
 #################################
 
+#################################
+myIndex_last = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
+last_computer_count = 0
+last_person_count = 0
+quantity_change_start = None  
+position_change_start = None  
+initial_position = None  # 新增：记录位置变化前的初始状态
 # 初始化滑动条
 sf.initTrackbars(window_info)
+#################################
 
 # 初始化计数器
 count = 0
 
+# 人执的棋子颜色
+PERSON_COLOR = 2
+# 机器执的棋子颜色
+COMPUTER_COLOR = 1
 # 进入主循环
 while True:
     # 创建一个空白图像
@@ -169,8 +186,12 @@ while True:
 
         # 将二值化图像分割成多个小方块
         boxs = sf.spiltboxs(img_warpGray_roi, ROWS_BROAD, COLUMNS_BROAD)
+        
+        if len(boxs) != ROWS_BROAD * COLUMNS_BROAD:
+            print(f"棋盘分割异常，期待{ROWS_BROAD*COLUMNS_BROAD}格，实际{len(boxs)}格")
+            continue
 
-        # 初始化像素值数组
+       # 初始化像素值数组
         myPixelVal = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
 
         # 初始化行和列索引
@@ -206,23 +227,74 @@ while True:
                 # 列索引重置为0
                 column = 0
             
-            
 
-        # 初始化选择索引列表
+               # 初始化选择索引列表
         myIndex = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
-        # 遍历每个问题
-        for x in range(0, ROWS_BROAD):
-            for y in range(0, COLUMNS_BROAD):
-                # 判断像素值是否大于阈值
-                if myPixelVal[x][y] > 190:
-                    # 将像素值设置为1
-                    myIndex[x][y] = 2
-                elif myPixelVal[x][y] < 80:
-                    # 将像素值设置为0
-                    myIndex[x][y] = 1
+        
+        # 使用np.where替代双重循环
+        myIndex = np.where(myPixelVal > 155, 2, 
+                  np.where(myPixelVal < 90, 1, 0))
+        
+        # 计算当前白棋数量
+        current_person_count = np.sum(myIndex == PERSON_COLOR)
+        current_computer_count = np.sum(myIndex == COMPUTER_COLOR)  # 新增黑棋数量统计
+        
+        # 1. 检测person数量变化（需要持续STABLE_TIME）
+        if abs(current_person_count - last_person_count) >= CHANGE_THRESHOLD:
+            if quantity_change_start is None:
+                quantity_change_start = time.time()  # 记录变化开始时间
+                print(f"检测到person数量变化开始，计时中...")
+            else:
+                if time.time() - quantity_change_start > STABLE_TIME:
+                    # 达到稳定时间后输出
+                    print(f"检测到持续{STABLE_TIME}秒的person数量变化: 上次{last_person_count}, 当前{current_person_count}")
+                    last_person_count = current_person_count  # 确认变化后更新last值
+                    last_computer_count = current_computer_count
+                    quantity_change_start = None  # 重置计时
+        else:
+            quantity_change_start = None  # 无变化时重置计时
+
+        # 2. 数量稳定时检测位置变化（需要持续STABLE_TIME）
+        if quantity_change_start is None:  
+            # 首次进入时记录初始位置
+            if initial_position is None:
+                initial_position = myIndex.copy()
+                position_change_start = None  
+                stable_counter = 0  # 新增：稳定帧数计数器
+            else:
+                # 比较当前状态与初始状态（允许1处差异容错）
+                all_changes = np.where(myIndex != initial_position)
+                change_count = len(all_changes[0])
+                
+                if change_count > 1:  # 新增：至少2处变化才认为有效
+                    if position_change_start is None:
+                        position_change_start = time.time()
+                        print(f"检测到位置变化开始（{change_count}处），计时中...")
+                        stable_counter = 0  # 重置稳定计数
+                    else:
+                        # 检查是否达到稳定时间（允许1帧抖动）
+                        if time.time() - position_change_start > STABLE_TIME:
+                            # 新增：连续2帧确认变化（避免单帧误判）
+                            if stable_counter >= 2:
+                                print(f"检测到持续{STABLE_TIME}秒的位置变化: {list(zip(all_changes[0], all_changes[1]))}")
+                                initial_position = myIndex.copy()  
+                                position_change_start = None  
+                                stable_counter = 0
+                            else:
+                                stable_counter += 1
                 else:
-                    # 将像素值设置为0
-                    myIndex[x][y] = 0
+                    # 差异小于2处，视为噪声，重置记录
+                    initial_position = None
+                    position_change_start = None
+                    stable_counter = 0
+
+        # 更新上一帧棋盘状态（必须保留）
+        myIndex_last = myIndex.copy()
+
+        # 移除原错误的持续更新代码（原last_person_count更新会导致检测失效）
+        # last_person_count = current_person_count  
+        # last_computer_count = current_computer_count
+
         #     # 获取当前问题的像素值数组
         #     arr = myPixelVal[x]
         #     # 找到像素值数组中的最大值的索引
