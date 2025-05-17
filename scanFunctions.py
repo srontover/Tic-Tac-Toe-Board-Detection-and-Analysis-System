@@ -249,21 +249,23 @@ def displayAnswers(img, myIndex, grading, ans, ques=7, choice=5):
 def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, detect_h=30, debug=False, 
                   myPixelVal=None, matrix=None):
     """
-    在图像上显示棋子的位置和颜色。
-
-    :param img: 要显示答案的图像
-    :param myIndex: 用户选择的答案索引列表
-    :param grading: 每个问题的得分情况列表
-    :param ans: 正确答案索引列表
-    :param ques: 问题的数量，默认为7
-    :param choice: 每个问题的选项数量，默认为5
-    :return: 显示了答案和得分情况的图像
+    可视化棋盘检测结果（带坐标映射功能）
+    
+    :param img: 透视变换后的图像（用于绘制检测结果）
+    :param img_original: 原始图像（用于显示映射后的坐标）
+    :param myIndex: 3x3棋盘状态矩阵（1:黑棋, 2:白棋）
+    :param ques: 棋盘行数（默认7需根据实际情况修改为3）
+    :param choice: 棋盘列数（默认5需根据实际情况修改为3）
+    :param detect_w: 检测区域宽度（像素）
+    :param detect_h: 检测区域高度（像素）
+    :param debug: 调试模式开关
+    :param myPixelVal: 原始像素值矩阵（调试模式显示用）
+    :param matrix: 透视变换矩阵（用于坐标逆变换）
+    :return: (标注后的透视图像, 标注后的原始图像)
     """
-    # 计算每个选项的宽度
+    
     def originalcenter(x, y, matrix):
-        """
-        计算原始中心点坐标，添加比例调整
-        """
+        """坐标逆映射核心方法（将透视图像坐标转换回原始图像坐标）"""
         if matrix is None or not isinstance(matrix, np.ndarray):
             return (0, 0)
             
@@ -284,40 +286,66 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
         except Exception as e:
             # print(f"坐标转换错误: {e}")
             return (0, 0)
-    # 计算每个选项的宽度   
-    sectionWidth = int(img.shape[1]/choice)
-    # 计算每个问题的高度
-    sectionHeight = int(img.shape[0]/ques)
-    # 遍历每个问题
-    for y in range(0, choice):
-        for x in range(0, ques):
-            cx, cy  = x * sectionWidth + sectionWidth//2, (y+1) * sectionHeight - sectionHeight//2
-            cv.circle(img, (cx, cy), 2, (0, 0, 255), cv.FILLED)
-            cv.circle(img_original, originalcenter(cx, cy, matrix), 2, (0, 0, 255), cv.FILLED)
-            cv.rectangle(img, (cx - detect_w // 2, cy - detect_h // 2), (cx + detect_w // 2, cy + detect_h // 2), (255, 0, 0), 1)
-            cv.putText(img, str(x + y + 1), (cx - 10, cy + 10), cv.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
-            if debug:
-                cv.putText(img, str(myPixelVal[y][x]), (cx - 10, cy + 30), cv.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
-            if myIndex[y][x] == 1: 
-                cv.putText(img, "black", (cx - 10, cy + 10), cv.FONT_HERSHEY_COMPLEX, 0.5, (0, 255, 0), 1)
+    # 计算单个棋格尺寸（根据实际棋盘3x3修改默认参数）
+    sectionWidth = int(img.shape[1]/choice)  # 列方向分割宽度
+    sectionHeight = int(img.shape[0]/ques)   # 行方向分割高度
+    
+    # 遍历棋盘每个格子（注意参数顺序，y对应行，x对应列）
+    for y in range(0, choice):    # y ∈ [0,2] 表示行索引
+        for x in range(0, ques):  # x ∈ [0,2] 表示列索引（原参数名有歧义，实际应为3x3）
+            # 计算当前格子中心坐标（透视图像坐标系）
+            cx, cy = x * sectionWidth + sectionWidth//2, (y+1) * sectionHeight - sectionHeight//2
+            
+            # 可视化标记（透视图像）
+            cv.circle(img, (cx, cy), 2, (0, 0, 255), cv.FILLED)  # 红色中心点
+            cv.rectangle(img, (cx - detect_w//2, cy - detect_h//2),
+                        (cx + detect_w//2, cy + detect_h//2), (255,0,0), 1)  # 蓝色检测框
+            
+            # 坐标逆映射（原始图像标记）
+            orig_point = originalcenter(cx, cy, matrix)
+            cv.circle(img_original, orig_point, 2, (0,0,255), cv.FILLED)  # 同步红色中心点
+
+            # 棋子状态标注（黑棋/白棋/空白）
+            if myIndex[y][x] == 1:  # 黑棋标注（绿色文字+实心圆）
+                cv.putText(img, "black", (cx-10, cy+10), cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1)
                 if debug:
-                    cv.circle(img_original, originalcenter(cx, cy, matrix), 10, (0, 0, 0), cv.FILLED)
-            elif myIndex[y][x] == 2:
-                cv.putText(img, "white", (cx - 10, cy + 10), cv.FONT_HERSHEY_COMPLEX, 0.5, (255, 0, 0), 1)
+                    cv.circle(img_original, orig_point, 10, (0,0,0), cv.FILLED)
+            elif myIndex[y][x] == 2:  # 白棋标注（红色文字+空心圆）
+                cv.putText(img, "white", (cx-10, cy+10), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1) 
                 if debug:
-                    cv.circle(img_original, originalcenter(cx, cy, matrix), 10, (255, 255, 255), cv.FILLED)
+                    cv.circle(img_original, orig_point, 10, (255,255,255), cv.FILLED)
+
+            # 调试信息显示（显示原始像素值）
+            if debug and myPixelVal is not None:
+                cv.putText(img, str(myPixelVal[y][x]), (cx-10, cy+30), 
+                          cv.FONT_HERSHEY_COMPLEX, 0.5, (255,255,255), 1)
+
     return img, img_original
 
 def calculate_fps(prev_time):
     """
-    计算并返回当前帧率(FPS)和新的时间戳
+    实时帧率计算器
     
-    :param prev_time: 上一帧的时间戳
-    :return: (fps, current_time) 当前帧率和新的时间戳
+    功能说明：
+    通过计算相邻两帧的时间差，动态获取当前帧率。
+    适用于视频处理、实时监控等需要性能分析的场景
+    
+    :param prev_time: 上一帧的时间戳（单位：秒），通过time.time()获取
+    :return: 元组（当前帧率, 当前帧时间戳）
+             当前帧率：每秒帧数（Frames Per Second）
+             当前帧时间戳：用于下一帧计算的基准时间
+    
+    使用示例：
+    prev_time = time.time()
+    while True:
+        # ... 处理帧 ...
+        fps, prev_time = calculate_fps(prev_time)
+        print(f"当前帧率：{fps:.2f}")
     """
-    current_time = time.time()
-    fps = 1 / (current_time - prev_time)
-    return fps, current_time
+    current_time = time.time()          # 获取当前系统时间（精确到毫秒）
+    delta_time = current_time - prev_time  # 计算时间间隔（单位：秒）
+    fps = 1 / delta_time if delta_time != 0 else 0  # 防止除零错误
+    return min(fps, 1000), current_time  # 限制最大1000FPS避免极端值
 
 def real_position(x, y):
     pass

@@ -78,19 +78,18 @@ ans_limit = 4000
 #################################
 
 #################################
-myIndex_last = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
+# 初始化计数器
 last_computer_count = 0
 last_person_count = 0
 quantity_change_start = None  
 position_change_start = None  
-initial_position = None  # 新增：记录位置变化前的初始状态
+initial_position = None  # 记录位置变化前的初始状态
 # 初始化滑动条
 sf.initTrackbars(window_info)
 #################################
 
-# 初始化计数器
-count = 0
-
+# 初始化计算fps
+prev_time = time.time()
 # 人执的棋子颜色
 PERSON_COLOR = 2
 # 机器执的棋子颜色
@@ -107,6 +106,8 @@ while True:
     else:
         # 从文件读取图像
         img = cv.imread(path)
+    # 计算fps
+    fps, prev_time = sf.calculate_fps(prev_time)
     # 调整图像大小
     img = cv.resize(img, (width, height))
     # 复制原始图像
@@ -172,18 +173,6 @@ while True:
         img_warpGray = clahe.apply(img_warpGray)
         # 裁剪灰度图的感兴趣区域
         img_warpGray_roi = cv.resize(img_warpGray, (300,300))
-        # # 获取threshold2窗口的滑动条值
-        # thres_warp = result["threshold2"]
-        # # 对灰度图进行二值化处理
-        # img_warpthres = cv.threshold(img_warpGray, thres_warp[0], 255, cv.THRESH_BINARY_INV)[1]
-
-        # # 裁剪二值化后图像的感兴趣区域
-        # img_warp_thres_rio = img_warpthres
-        # # 调整感兴趣区域的大小
-        # img_warp_thres_rio = cv.resize(img_warp_thres_rio, (300,300))
-        # # 显示裁剪后的二值化图像
-        # cv.imshow("img_warp_thres_rio", img_warp_thres_rio)
-
         # 将二值化图像分割成多个小方块
         boxs = sf.spiltboxs(img_warpGray_roi, ROWS_BROAD, COLUMNS_BROAD)
         
@@ -199,23 +188,12 @@ while True:
         column = 0
         # 遍历每个小方块
         for box in boxs:
-            # # 计算小方块中非零像素的数量
-            # totalPixels = cv.countNonZero(box)
-            # # 将非零像素数量存储到像素值数组中
-            # myPixelVal[rows][column] = totalPixels
             cx, cy = box.shape[1]//2, box.shape[0]//2
             
             # 提取ROI区域
             roi = box[max(0, cy-DETECT_HEIGHT//2):min(box.shape[0], cy+DETECT_HEIGHT//2),
                      max(0, cx-DETECT_WIDTH//2):min(box.shape[1], cx+DETECT_WIDTH//2)]
             
-            # # 直方图均衡化(替代histequal)
-            # roi = cv.equalizeHist(roi)
-            
-            # 计算中值(替代a_median())
-            # CLAHE局部对比度增强
-            # clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            # box_clahe = clahe.apply(box)
             values = np.median(roi)
             myPixelVal[rows][column] = values
             # 列索引加1
@@ -235,9 +213,9 @@ while True:
         myIndex = np.where(myPixelVal > 155, 2, 
                   np.where(myPixelVal < 90, 1, 0))
         
-        # 计算当前白棋数量
-        current_person_count = np.sum(myIndex == PERSON_COLOR)
-        current_computer_count = np.sum(myIndex == COMPUTER_COLOR)  # 新增黑棋数量统计
+        # 计算当前棋子数量、位置变化
+        current_person_count = np.sum(myIndex == PERSON_COLOR) # 人执
+        current_computer_count = np.sum(myIndex == COMPUTER_COLOR) # 机器执
         
         # 1. 检测person数量变化（需要持续STABLE_TIME）
         if abs(current_person_count - last_person_count) >= CHANGE_THRESHOLD:
@@ -262,11 +240,12 @@ while True:
                 position_change_start = None  
                 stable_counter = 0  # 新增：稳定帧数计数器
             else:
-                # 比较当前状态与初始状态（允许1处差异容错）
+                # 比较当前状态与初始状态
+                # 计算变化的位置数量（不包括0）
                 all_changes = np.where(myIndex != initial_position)
                 change_count = len(all_changes[0])
                 
-                if change_count > 0:  # 新增：至少2处变化才认为有效
+                if change_count > 1:  # 至少2处变化才认为有效
                     if position_change_start is None:
                         position_change_start = time.time()
                         print(f"检测到位置变化开始（{change_count}处），计时中...")
@@ -283,41 +262,11 @@ while True:
                             else:
                                 stable_counter += 1
                 else:
-                    # 差异小于2处，视为噪声，重置记录
+                    # 位置未变化，重置计数器
                     # initial_position = None
                     position_change_start = None
                     stable_counter = 0
 
-        # 更新上一帧棋盘状态（必须保留）
-        myIndex_last = myIndex.copy()
-
-        # 移除原错误的持续更新代码（原last_person_count更新会导致检测失效）
-        # last_person_count = current_person_count  
-        # last_computer_count = current_computer_count
-
-        #     # 获取当前问题的像素值数组
-        #     arr = myPixelVal[x]
-        #     # 找到像素值数组中的最大值的索引
-        #     myIndexVal = np.where(arr == np.amax(arr))
-        #     # 判断最大值是否大于阈值
-        #     if arr[myIndexVal[0][0]] > ans_limit:
-        #         # 将最大值的索引添加到选择索引列表中
-        #         myIndex.append(myIndexVal[0][0])
-        #     else:
-        #         # 如果最大值小于阈值，添加-1表示未选择
-        #         myIndex.append(-1)
-        # print(myIndex)
-        
-                                
-        # 打印每个问题的得分情况，可用于调试
-        # print(grade)
-        # 计算总分，总分 = 所有得分之和 / 问题总数 * 100
-        # 打印最终得分，可用于调试
-        # print(score)
-        # 在最大轮廓图像上绘制得分信息
-        # 显示特定图像，这里注释掉了，可根据需要取消注释
-        # cv.imshow("test", img_warp_thres_rio)
-        # cv.imshow("test", boxs[0])
         
         # 复制感兴趣区域图像，用于显示结果
         img_result = img_warp_rio.copy()
@@ -325,6 +274,8 @@ while True:
         img_result, img_original_center = sf.displayResult(img_result, img_big_contour, myIndex, 
                                                            ROWS_BROAD, COLUMNS_BROAD, 
                                                            debug=True, myPixelVal=myPixelVal, matrix=matrix)
+        # 在结果图像上显示FPS
+        cv.putText(img_result, f"FPS: {int(fps)}", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         # 显示结果图像
         cv.imshow("result", img_result)
         
