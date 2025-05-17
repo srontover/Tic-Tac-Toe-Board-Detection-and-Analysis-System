@@ -266,7 +266,7 @@ while True:
                 all_changes = np.where(myIndex != initial_position)
                 change_count = len(all_changes[0])
                 
-                if change_count > 1:  # 新增：至少2处变化才认为有效
+                if change_count > 0:  # 新增：至少2处变化才认为有效
                     if position_change_start is None:
                         position_change_start = time.time()
                         print(f"检测到位置变化开始（{change_count}处），计时中...")
@@ -284,7 +284,7 @@ while True:
                                 stable_counter += 1
                 else:
                     # 差异小于2处，视为噪声，重置记录
-                    initial_position = None
+                    # initial_position = None
                     position_change_start = None
                     stable_counter = 0
 
