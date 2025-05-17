@@ -23,6 +23,9 @@ cap.set(3, width)
 cap.set(4, height)
 # 设置摄像头的亮度
 cap.set(10, 150)
+# 设置摄像头帧率（添加在亮度设置后）
+cap.set(cv.CAP_PROP_FPS, 30)  # 限制最大30帧/秒
+cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*'MJPG'))  # 设置编码格式为MJPG
 
 # 定义窗口信息列表，每个元素是一个字典，包含窗口名称和滑动条信息
 window_info = [
