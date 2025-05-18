@@ -227,11 +227,19 @@ while True:
                 print(f"检测到person数量变化开始，计时中...")
             else:
                 if time.time() - quantity_change_start > STABLE_TIME:
-                    # 达到稳定时间后输出
-                    print(f"检测到持续{STABLE_TIME}秒的person数量变化: 上次{last_person_count}, 当前{current_person_count}")
+                    # 找到新增的人执棋子位置
+                    new_positions = np.where((myIndex == PERSON_COLOR) & (initial_position != PERSON_COLOR))
+                    new_positions = (new_positions[0].astype(int), new_positions[1].astype(int))
+                    
+                    # 输出每个新棋子的位置
+                    for row, col in zip(new_positions[0], new_positions[1]):
+                        print(f"人下在: 行{row} 列{col}")
+                    
+                    
                     last_person_count = current_person_count  # 确认变化后更新last值
                     last_computer_count = current_computer_count
                     quantity_change_start = None  # 重置计时
+                    initial_position = myIndex.copy()  # 更新初始状态
         else:
             quantity_change_start = None  # 无变化时重置计时
 
@@ -246,9 +254,10 @@ while True:
                 # 比较当前状态与初始状态
                 # 计算变化的位置数量（不包括0）
                 all_changes = np.where(myIndex != initial_position)
+                all_changes = (all_changes[0].astype(int), all_changes[1].astype(int))
                 change_count = len(all_changes[0])
                 
-                if change_count > 1:  # 至少2处变化才认为有效
+                if change_count % 2 == 0 and change_count > 1:  # 确保变化数量为偶数
                     if position_change_start is None:
                         position_change_start = time.time()
                         print(f"检测到位置变化开始（{change_count}处），计时中...")
@@ -258,7 +267,11 @@ while True:
                         if time.time() - position_change_start > STABLE_TIME:
                             # 新增：连续2帧确认变化（避免单帧误判）
                             if stable_counter >= 2:
-                                print(f"检测到持续{STABLE_TIME}秒的位置变化: {list(zip(all_changes[0], all_changes[1]))}")
+                                # 输出变化位置及颜色信息
+                                row, col = all_changes[0][0], all_changes[1][0]
+                                color = "白" if myIndex[row][col] == PERSON_COLOR else "黑"
+                                print(f"位置变化: 行{row} 列{col}, 当前颜色: {color}")
+                                # 更新last值
                                 initial_position = myIndex.copy()  
                                 position_change_start = None  
                                 stable_counter = 0
