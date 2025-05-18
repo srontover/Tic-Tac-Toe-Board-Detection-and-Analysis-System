@@ -233,7 +233,7 @@ while True:
                     
                     # 输出每个新棋子的位置
                     for row, col in zip(new_positions[0], new_positions[1]):
-                        print(f"人下在: 行{row} 列{col}")
+                        print(f"人下在: 行{row+1} 列{col+1}")
                     
                     
                     last_person_count = current_person_count  # 确认变化后更新last值
@@ -257,23 +257,22 @@ while True:
                 all_changes = (all_changes[0].astype(int), all_changes[1].astype(int))
                 change_count = len(all_changes[0])
                 
-                if change_count % 2 == 0 and change_count > 1:  # 确保变化数量为偶数
+                if change_count % 2 == 0 and change_count > 1:  
                     if position_change_start is None:
                         position_change_start = time.time()
                         print(f"检测到位置变化开始（{change_count}处），计时中...")
-                        stable_counter = 0  # 重置稳定计数
+                        stable_counter = 0  
                     else:
-                        # 检查是否达到稳定时间（允许1帧抖动）
                         if time.time() - position_change_start > STABLE_TIME:
-                            # 新增：连续2帧确认变化（避免单帧误判）
                             if stable_counter >= 2:
-                                # 输出变化位置及颜色信息
-                                row, col = all_changes[0][0], all_changes[1][0]
-                                color = "白" if myIndex[row][col] == PERSON_COLOR else "黑"
-                                print(f"位置变化: 行{row} 列{col}, 当前颜色: {color}")
-                                # 更新last值
-                                initial_position = myIndex.copy()  
-                                position_change_start = None  
+                                # 只输出新位置（状态非0的坐标）
+                                new_positions = np.where(myIndex != 0)
+                                for row, col in zip(new_positions[0], new_positions[1]):
+                                    if myIndex[row][col] != initial_position[row][col]:
+                                        print(f"新位置: 行{row+1} 列{col+1} 颜色{myIndex[row][col]}")
+                                
+                                initial_position = myIndex.copy()
+                                position_change_start = None
                                 stable_counter = 0
                             else:
                                 stable_counter += 1
@@ -291,9 +290,9 @@ while True:
                                                            ROWS_BROAD, COLUMNS_BROAD, 
                                                            debug=True, myPixelVal=myPixelVal, matrix=matrix)
         # 在结果图像上显示FPS
-        cv.putText(img_result, f"FPS: {int(fps)}", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv.putText(img_original_center, f"FPS: {int(fps)}", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         # 显示结果图像
-        cv.imshow("result", img_result)
+        cv.imshow("ori_ctr", img_original_center)
         
         # 定义要堆叠显示的图像矩阵
         imgs = ([img, img_gray, img_thres, img_contours],
