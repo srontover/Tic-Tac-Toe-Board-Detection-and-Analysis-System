@@ -5,7 +5,8 @@ import numpy as np
 # 导入自定义的扫描功能模块
 import scanFunctions as sf
 import time
-
+# import serial
+# 导入自定义的串口通信模块
 ################################
 # 定义图像文件的路径
 path = "test.jpg"
@@ -70,6 +71,8 @@ DETECT_HEIGHT = 30
 # 定义稳定时间
 STABLE_TIME = 1
 
+STABLE_TIME_POINT = 5
+
 # 定义答案像素值的阈值
 ans_limit = 4000
 # 定义变化检测的阈值
@@ -78,6 +81,9 @@ CHANGE_THRESHOLD = 1
 ans = [1,1,1]
 # 定义答案像素值的阈值
 ans_limit = 4000
+
+point_h_thres = 7
+point_v_thres = 7
 #################################
 
 #################################
@@ -87,6 +93,9 @@ last_person_count = 0
 quantity_change_start = None  
 position_change_start = None  
 initial_position = None  # 记录位置变化前的初始状态
+ # 在变量初始化部分添加
+last_sent_coord = None
+last_sent_time = 0
 # 初始化滑动条
 sf.initTrackbars(window_info)
 #################################
@@ -97,6 +106,41 @@ prev_time = time.time()
 PERSON_COLOR = 2
 # 机器执的棋子颜色
 COMPUTER_COLOR = 1
+
+# 初始化串口通信
+# ser = serial.Serial('COM3', 9600, timeout=1)  # 替换为你的串口号和波特率
+# 检查串口是否打开
+# if ser.is_open:
+#     print("串口已打开")
+
+# buffer = bytearray()  # 添加缓冲区用于存储接收数据
+# while True:
+#     data = ser.read(ser.in_waiting or 1)  # 读取所有可用字节
+#     if data:
+#         buffer.extend(data)
+#         # 检查完整帧结构 0x00 0x00 [有效字节] 0xff
+#         while len(buffer) >= 4:  # 至少需要4字节判断结构
+#             # 查找帧头
+#             start = buffer.find(b'\x00\x00')
+#             if start != -1 and len(buffer) >= start + 3:
+#                 # 找到有效数据字节（第三个字节）
+#                 if buffer[start + 3] == 0xff:  # 验证帧尾
+#                     middle_byte = buffer[start + 2]
+#                     print(f"接收到中间字节: 0x{middle_byte:02x}")
+#                     PERSON_COLOR = middle_byte
+#                     COMPUTER_COLOR = 2 if PERSON_COLOR == 1 else 1
+#                     del buffer[:start+4]  # 移除已处理数据
+#                     break
+#                 else:
+#                     del buffer[:start+1]  # 无效帧头，跳过第一个00
+#             else:
+#                 break  # 没有有效帧头继续接收
+#     else:
+#         time.sleep(0.01)  # 添加短暂延时防止CPU占满
+#     if PERSON_COLOR in [1, 2]:  # 收到有效数据后退出循环
+#         break
+
+    
 # 进入主循环
 while True:
     # 创建一个空白图像
@@ -186,35 +230,24 @@ while True:
        # 初始化像素值数组
         myPixelVal = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
 
-        # 初始化行和列索引
-        rows = 0
-        column = 0
-        # 遍历每个小方块
-        for box in boxs:
-            cx, cy = box.shape[1]//2, box.shape[0]//2
-            
-            # 提取ROI区域
-            roi = box[max(0, cy-DETECT_HEIGHT//2):min(box.shape[0], cy+DETECT_HEIGHT//2),
-                     max(0, cx-DETECT_WIDTH//2):min(box.shape[1], cx+DETECT_WIDTH//2)]
-            
-            values = np.median(roi)
-            myPixelVal[rows][column] = values
-            # 列索引加1
-            column += 1
-            # 判断是否到达一行的末尾
-            if column == COLUMNS_BROAD:
-                # 行索引加1
-                rows += 1
-                # 列索引重置为0
-                column = 0
-            
-
-               # 初始化选择索引列表
-        myIndex = np.zeros((ROWS_BROAD, COLUMNS_BROAD))
+        if len(boxs) == ROWS_BROAD * COLUMNS_BROAD:
+        # 将列表转为三维数组 (ROWS_BROAD, COLUMNS_BROAD, H, W)
+            box_array = np.array(boxs).reshape(ROWS_BROAD, COLUMNS_BROAD, *boxs[0].shape)
         
-        # 使用np.where替代双重循环
-        myIndex = np.where(myPixelVal > 155, 2, 
-                  np.where(myPixelVal < 90, 1, 0))
+            # 向量化计算中心区域（比循环快10倍以上）
+            cy, cx = box_array.shape[2]//2, box_array.shape[3]//2
+            rois = box_array[:, :, 
+                            cy-DETECT_HEIGHT//2:cy+DETECT_HEIGHT//2,
+                            cx-DETECT_WIDTH//2:cx+DETECT_WIDTH//2]
+            myPixelVal = np.median(rois, axis=(2,3))
+            
+            # 使用向量化条件判断
+            myIndex = np.select(
+                [myPixelVal > 155, myPixelVal < 90],
+                [2, 1],
+                default=0
+            )
+
         
         # 计算当前棋子数量、位置变化
         current_person_count = np.sum(myIndex == PERSON_COLOR) # 人执
@@ -286,9 +319,31 @@ while True:
         # 复制感兴趣区域图像，用于显示结果
         img_result = img_warp_rio.copy()
         # 调用自定义函数，在图像上显示答案和得分情况
-        img_result, img_original_center = sf.displayResult(img_result, img_big_contour, myIndex, 
+        img_result, img_original_center, orignal_point = sf.displayResult(img_result, img_big_contour, myIndex, 
                                                            ROWS_BROAD, COLUMNS_BROAD, 
                                                            debug=True, myPixelVal=myPixelVal, matrix=matrix)
+        # 修改坐标检测部分（替换原有复杂逻辑）
+        current_time = time.time()
+        if orignal_point and all(p != (0, 0) for p in orignal_point):
+            # 首次发送或满足稳定条件
+            if last_sent_coord is None or \
+            (abs(orignal_point[0][0] - last_sent_coord[0][0]) >= point_h_thres and
+                abs(orignal_point[0][1] - last_sent_coord[0][1]) >= point_v_thres and
+                current_time - last_sent_time > STABLE_TIME_POINT):
+                
+                # 构造数据包（小端序）
+                for i in range(ROWS_BROAD*COLUMNS_BROAD):
+                    data = b'\x00' + \
+                        orignal_point[i][0].to_bytes(2, 'little') + \
+                        orignal_point[i][1].to_bytes(2, 'little') + \
+                        b'\xff'
+                    
+                    # ser.write(data)
+                last_sent_coord = orignal_point
+                last_sent_time = current_time
+                print(f"坐标已发送: {orignal_point}")
+            
+
         # 在结果图像上显示FPS
         cv.putText(img_original_center, f"FPS: {int(fps)}", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         # 显示结果图像

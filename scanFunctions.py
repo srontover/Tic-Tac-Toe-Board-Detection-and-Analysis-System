@@ -60,7 +60,7 @@ def biggestContour(contours):
         # 计算当前轮廓的面积
         area = cv.contourArea(cnt)
         # 降低面积阈值以适应倾斜情况
-        if area > 3000:  # 从5000调整为3000
+        if 3000 < area :  # 从5000调整为3000
             # 计算轮廓的周长
             peri = cv.arcLength(cnt, True)
             # 调整多边形逼近的精度参数
@@ -275,8 +275,14 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
             warped_h, warped_w = img.shape[:2]
             
             # 调整坐标比例
+            # 问题3：originalcenter函数坐标缩放逻辑错误（原279-284行）
+            # 原错误代码：
             x_scaled = x * (original_w / warped_w)
             y_scaled = y * (original_h / warped_h)
+            
+            # 应修正为（考虑裁剪偏移量）：
+            x_scaled = (x + 5) * (original_w / (warped_w - 10))  # +5补偿裁剪偏移
+            y_scaled = (y + 5) * (original_h / (warped_h - 10))  # +5补偿裁剪偏移
             
             point = np.array([[[x_scaled, y_scaled]]], dtype=np.float32)
             original_point = cv.perspectiveTransform(point, np.linalg.inv(matrix))
@@ -289,6 +295,7 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
     # 计算单个棋格尺寸（根据实际棋盘3x3修改默认参数）
     sectionWidth = int(img.shape[1]/choice)  # 列方向分割宽度
     sectionHeight = int(img.shape[0]/ques)   # 行方向分割高度
+    point_list = []  # 存储逆映射后的坐标
     
     # 遍历棋盘每个格子（注意参数顺序，y对应行，x对应列）
     for y in range(0, choice):    # y ∈ [0,2] 表示行索引
@@ -304,7 +311,7 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
             # 坐标逆映射（原始图像标记）
             orig_point = originalcenter(cx, cy, matrix)
             cv.circle(img_original, orig_point, 2, (0,0,255), cv.FILLED)  # 同步红色中心点
-
+            point_list.append(orig_point)
             # 棋子状态标注（黑棋/白棋/空白）
             if myIndex[y][x] == 1:  # 黑棋标注（绿色文字+实心圆）
                 cv.putText(img, "black", (cx-10, cy+10), cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1)
@@ -320,7 +327,7 @@ def displayResult(img, img_original, myIndex, ques=7, choice=5, detect_w=30, det
                 cv.putText(img, str(myPixelVal[y][x]), (cx-10, cy+30), 
                           cv.FONT_HERSHEY_COMPLEX, 0.5, (255,255,255), 1)
 
-    return img, img_original
+    return img, img_original, point_list
 
 def calculate_fps(prev_time):
     """
